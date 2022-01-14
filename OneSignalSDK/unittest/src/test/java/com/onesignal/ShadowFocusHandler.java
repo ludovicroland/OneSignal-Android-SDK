@@ -1,7 +1,7 @@
 /**
  * Modified MIT License
  *
- * Copyright 2020 OneSignal
+ * Copyright 2022 OneSignal
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,25 +27,16 @@
 
 package com.onesignal;
 
-import android.app.Service;
-import android.content.Intent;
-import android.os.IBinder;
+import android.content.Context;
 
-import androidx.annotation.Nullable;
+import org.robolectric.annotation.Implementation;
+import org.robolectric.annotation.Implements;
 
-public class FocusDelaySyncService extends Service {
+@Implements(OSFocusHandler.class)
+public class ShadowFocusHandler {
 
-   @Override
-   public int onStartCommand(Intent intent, int flags, int startId) {
-      ActivityLifecycleHandler.runLostFocusLogic(this);
-      return START_STICKY;
+   @Implementation
+   public static void startOnFocusWorker(Context context) {
+      OSFocusHandler.Companion.onFocusDoWork();
    }
-
-   // This Service does not support bindings
-   @Nullable
-   @Override
-   public IBinder onBind(Intent intent) {
-      return null;
-   }
-
 }

@@ -29,7 +29,6 @@ package com.onesignal;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.content.Context;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.os.Build;
@@ -56,16 +55,18 @@ class ActivityLifecycleHandler implements OSSystemConditionController.OSSystemCo
         }
     }
 
-    private static final Object SYNC_LOCK = new Object();
-    private static final String FOCUS_LOST_WORKER_TAG = "FOCUS_LOST_WORKER_TAG";
     private static final Map<String, ActivityAvailableListener> sActivityAvailableListeners = new ConcurrentHashMap<>();
     private static final Map<String, OSSystemConditionController.OSSystemConditionObserver> sSystemConditionObservers = new ConcurrentHashMap<>();
     private static final Map<String, KeyboardListener> sKeyboardListeners = new ConcurrentHashMap<>();
 
-    private static AppFocusRunnable appFocusRunnable;
     @SuppressLint("StaticFieldLeak")
     private Activity curActivity = null;
+    private OSFocusHandler focusHandler = null;
     private boolean nextResumeIsFirstActivity = false;
+
+    public ActivityLifecycleHandler(OSFocusHandler focusHandler) {
+        this.focusHandler = focusHandler;
+    }
 
     void onConfigurationChanged(Configuration newConfig, Activity activity) {
         // If Activity contains the configChanges orientation flag, re-create the view this way
@@ -166,23 +167,23 @@ class ActivityLifecycleHandler implements OSSystemConditionController.OSSystemCo
 
     private void handleLostFocus() {
         OneSignal.onesignalLog(OneSignal.LOG_LEVEL.DEBUG, "ActivityLifecycleHandler Handling lost focus");
-        if (appFocusRunnable != null && appFocusRunnable.backgrounded && !appFocusRunnable.completed)
+        if (focusHandler == null || focusHandler.hasBackgrounded() && !focusHandler.hasCompleted())
             return;
 
         OneSignal.getFocusTimeController().appStopped();
-        OSFocusDelaySync.getInstance().scheduleSyncTask(OneSignal.appContext);
+        focusHandler.startOnFocusWorker(OneSignal.appContext);
     }
 
     private void handleFocus() {
-        OneSignal.onesignalLog(OneSignal.LOG_LEVEL.DEBUG, "ActivityLifecycleHandler handleFocus, with runnable: " + appFocusRunnable + " nextResumeIsFirstActivity: " + nextResumeIsFirstActivity);
-        if (hasBackgrounded() || nextResumeIsFirstActivity) {
+        OneSignal.onesignalLog(OneSignal.LOG_LEVEL.DEBUG, "ActivityLifecycleHandler handleFocus, nextResumeIsFirstActivity: " + nextResumeIsFirstActivity);
+        if (focusHandler.hasBackgrounded() || nextResumeIsFirstActivity) {
             OneSignal.onesignalLog(OneSignal.LOG_LEVEL.DEBUG, "ActivityLifecycleHandler reset background state, call app focus");
             nextResumeIsFirstActivity = false;
-            resetBackgroundState();
+            focusHandler.resetBackgroundState();
             OneSignal.onAppFocus();
         } else {
-            OneSignal.onesignalLog(OneSignal.LOG_LEVEL.DEBUG, "ActivityLifecycleHandler cancel background lost focus sync task");
-            OSFocusDelaySync.getInstance().cancelBackgroundSyncTask(OneSignal.appContext);
+            OneSignal.onesignalLog(OneSignal.LOG_LEVEL.DEBUG, "ActivityLifecycleHandler cancel backgro92818und lost focus worker");
+            focusHandler.cancelOnFocusWorker(OneSignal.appContext);
         }
     }
 
@@ -247,46 +248,6 @@ class ActivityLifecycleHandler implements OSSystemConditionController.OSSystemCo
 
     void setNextResumeIsFirstActivity(boolean nextResumeIsFirstActivity) {
         this.nextResumeIsFirstActivity = nextResumeIsFirstActivity;
-    }
-
-    void resetBackgroundState() {
-        if (appFocusRunnable != null)
-            appFocusRunnable.backgrounded = false;
-    }
-
-    boolean hasBackgrounded() {
-        return appFocusRunnable != null && appFocusRunnable.backgrounded;
-    }
-
-    static void runLostFocusLogic(Context context) {
-        OneSignal.onesignalLog(OneSignal.LOG_LEVEL.DEBUG, "ActivityLifecycleHandler runLostFocusLogic");
-        ActivityLifecycleHandler activityLifecycleHandler = ActivityLifecycleListener.getActivityLifecycleHandler();
-        if (activityLifecycleHandler == null || activityLifecycleHandler.curActivity == null)
-            OneSignal.setInForeground(false);
-        appFocusRunnable = new AppFocusRunnable();
-        OSFocusDelaySync.getInstance().doBackgroundSync(
-                context,
-                appFocusRunnable
-        );
-    }
-
-    static class AppFocusRunnable implements Runnable {
-        private boolean backgrounded, completed;
-
-        public void run() {
-            OneSignal.onesignalLog(OneSignal.LOG_LEVEL.DEBUG, "ActivityLifecycleHandler running AppFocusRunnable");
-            backgrounded = true;
-            OneSignal.onAppLostFocus();
-            completed = true;
-        }
-
-        @Override
-        public String toString() {
-            return "AppFocusRunnable{" +
-                    "backgrounded=" + backgrounded +
-                    ", completed=" + completed +
-                    '}';
-        }
     }
 
     static class KeyboardListener implements ViewTreeObserver.OnGlobalLayoutListener {
